@@ -1,0 +1,4 @@
+fabric
+lxml
+beautifulsoup4
+requests
