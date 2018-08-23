@@ -46,3 +46,6 @@ along the route.
 The `traceroute` task appends the output to the files in `output`. Run `fab clean`
 between runs to wipe the existing `output` and start clean.
 
+### Testing the slack integration
+
+
