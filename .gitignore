@@ -1,3 +1,3 @@
 *.html
-hosts.json
+ca-hosts.json
 output/

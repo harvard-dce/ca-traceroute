@@ -8,18 +8,56 @@ from invoke.exceptions import Exit
 
 
 @task
-def generate_host_list(c, html_file):
+def init_check(c):
+    if not os.path.isdir('output'):
+        os.mkdir('output')
+
+    if not os.path.exists('ca-hosts.json'):
+        raise Exit("missing ca-hosts.json file. did you run 'generate-ca-hosts'?")
+
+@task
+def generate_ca_hosts(c, html_file):
     with open(html_file, 'r') as f:
         html = f.read()
 
     soup = BeautifulSoup(html, "lxml")
     ca_links = soup.find_all('a', role="button", target="_blank")
     hrefs = [x.attrs['href'] for x in ca_links]
-    hosts = [x.split('://')[1].replace('/', '') for x in hrefs]
+    ca_hosts = [x.split('://')[1].replace('/', '') for x in hrefs]
 
-    with open('hosts.json', 'w') as f:
-        json.dump(hosts, f, indent=2)
+    with open('ca-hosts.json', 'w') as f:
+        json.dump(ca_hosts, f, indent=2)
 
+
+@task(pre=[init_check])
+def install_iperf3(c, ca_host=None):
+
+    ca_host_group = get_ca_host_group(ca_host)
+
+    for conn in ca_host_group:
+        print("Working on {}".format(conn.host))
+        try:
+            conn.run("curl -s -o /usr/lib64/libiperf.so.0 https://iperf.fr/download/ubuntu/libiperf.so.0_3.1.3")
+            conn.run("curl -s -o /usr/bin/iperf3 https://iperf.fr/download/ubuntu/iperf3_3.1.3")
+            conn.run("chmod 0755 /usr/bin/iperf3")
+            conn.run("iperf3 -v")
+        except socket.timeout:
+            print("Connection timed out after 5s to {}".format(conn.host))
+        except socket.gaierror as e:
+            print("Error installing iperf3 on {}: {}".format(conn.host, str(e)))
+
+@task(pre=[init_check])
+def iperf3(c, ca_host=None):
+
+    # 1. get conn to admin
+    # 2. run iperf3 in daemon mode & save pid
+    # 3. run iperf3 on cas
+    # 4. kill admin iperf3 w/ pid
+    ca_host_group = get_ca_host_group(ca_host)
+
+    for conn in ca_host_group:
+        print("Working on {}".format(conn.host))
+        try:
 
 @task
 def clean(c):
@@ -27,37 +65,30 @@ def clean(c):
         c.run("rm -rf output")
 
 
-@task
-def traceroutes(c, destination, port=None, runs=3):
-    if not os.path.exists('hosts.json'):
-        raise Exit("missing hosts.json file. did you run 'generate-host-list'?")
-    with open('hosts.json', 'r') as f:
-        hosts = json.load(f)
-
-    if not os.path.isdir('output'):
-        os.mkdir('output')
+@task(pre=[init_check])
+def traceroutes(c, destination, ca_host=None, port=None, runs=3):
 
     for idx in range(1, int(runs) + 1):
-        host_group = Group(*hosts, user='root', connect_timeout=5)
-        for host in host_group:
-            gen_traceroute(host, destination, port, idx)
+        ca_host_group = get_ca_host_group(ca_host)
+        for conn in ca_host_group:
+            gen_traceroute(conn, destination, port, idx)
 
 
-def gen_traceroute(c, destination, port, run_idx):
-    print("Working on {}".format(c.host))
+def gen_traceroute(conn, destination, port, run_idx):
+    print("Working on {}".format(conn.host))
 
     if port is not None:
         port = "-p {}".format(port)
     else:
         port = ""
 
-    outfile = "output/{}.txt".format(c.host)
+    outfile = "output/{}.txt".format(conn.host)
     cmd = "traceroute {} {}".format(port, destination)
 
     try:
-        result = c.run(cmd, pty=True).stdout
+        result = conn.run(cmd, pty=True).stdout
     except socket.timeout:
-        result = "Connection timed out after 5s to {}".format(c.host)
+        result = "Connection timed out after 5s to {}".format(conn.host)
     except socket.gaierror as e:
         result = str(e)
 
@@ -66,11 +97,13 @@ def gen_traceroute(c, destination, port, run_idx):
         f.write(result)
         f.write("\n\n")
 
+def get_ca_host_group(ca_host=None):
 
+    with open('ca-hosts.json', 'r') as f:
+        ca_hosts = json.load(f)
 
+    if ca_host is not None:
+        ca_hosts = [x for x in ca_hosts if x.startswith(ca_host)]
 
-
-
-
-
+    return Group(*ca_hosts, user='root', connect_timeout=5)
 
