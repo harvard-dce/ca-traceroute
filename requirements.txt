@@ -2,3 +2,4 @@ fabric
 lxml
 beautifulsoup4
 requests
+iperf3
