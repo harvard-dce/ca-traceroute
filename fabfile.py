@@ -78,7 +78,7 @@ def iperf3(c, dest_host, ca_host=None, parallel=None, stdout=False):
         for conn in ca_host_group:
             print("Working on {}".format(conn.host))
             try:
-                result = conn.run(cmd, pty=True, hide=True).stdout
+                result = conn.run(cmd, pty=True, hide=True, warn=True).stdout
             except socket.timeout:
                 print("Connection timed out after 5s to {}".format(conn.host))
                 continue
